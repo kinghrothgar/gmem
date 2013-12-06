@@ -138,7 +138,6 @@ func main() {
     case "g", "gb":
 		memTotal = memTotal / 1048576
 		memFree = memFree / 1048576
-        memAvailable = memAvailable / 1024
         memAvailable = memAvailable / 1048576
         memUnavailable = memUnavailable / 1048576
         size = "GB"
