@@ -1,14 +1,14 @@
 package main
 
 import (
-	"regexp"
+	"errors"
 	"flag"
-	"os"
-	"io/ioutil"
-	"strconv"
 	"fmt"
-    "errors"
-    "strings"
+	"io/ioutil"
+	"os"
+	"regexp"
+	"strconv"
+	"strings"
 )
 
 // To be set at build
@@ -18,13 +18,13 @@ var buildRuntime string
 
 // Variables for flags
 var (
-	help		bool
-	showVers	bool
-	sizeOp		string
+	help     bool
+	showVers bool
+	sizeOp   string
 )
 
 func init() {
-	flag.StringVar(&sizeOp, "s", "k", "what units to use: k, m, g")
+	flag.StringVar(&sizeOp, "u", "k", "what units to use: k, m, g")
 	flag.BoolVar(&showVers, "v", false, "show version/build information")
 	flag.BoolVar(&help, "help", false, "display this help text")
 	flag.Parse()
@@ -46,54 +46,59 @@ func usage() {
 }
 
 func fatalExit(msg string, params ...interface{}) {
-    fmt.Printf(msg + "\n", params...)
-    os.Exit(1)
+	fmt.Printf(msg+"\n", params...)
+	os.Exit(1)
 }
 
 func min(x, y int) int {
-    if x < y {
-        return x
-    }
-    return y
+	if x < y {
+		return x
+	}
+	return y
 }
 
 func verifyInfo(info map[string]int) error {
-    keys := []string{"MemFree", "Active(file)", "Inactive(file)", "SReclaimable", "MemTotal"}
-    for _, key := range keys {
-        if _, ok := info[key]; ok {continue}
-        return errors.New("'/proc/meminfo' does not have the needed field '" + key + "'")
-    }
-    return nil
+	keys := []string{"MemFree", "Active(file)", "Inactive(file)", "SReclaimable", "MemTotal"}
+	for _, key := range keys {
+		if _, ok := info[key]; ok {
+			continue
+		}
+		return errors.New("'/proc/meminfo' does not have the needed field '" + key + "'")
+	}
+	return nil
 }
 
-
 func main() {
-	if help {usage()} // Does not return
-	if showVers {showVersion()} //Does not return
+	if help {
+		usage()
+	} // Does not return
+	if showVers {
+		showVersion()
+	} //Does not return
 
 	var (
-		file	[]byte
-		err		error
+		file []byte
+		err  error
 	)
 	// Read in meminfo and zoneinfo
 	if file, err = ioutil.ReadFile("/proc/meminfo"); err != nil {
-        fatalExit("Error: failed to read '/proc/meminfo' with error: %s", err)
+		fatalExit("Error: failed to read '/proc/meminfo' with error: %s", err)
 	}
 	meminfo := string(file)
 	if file, err = ioutil.ReadFile("/proc/zoneinfo"); err != nil {
-        fatalExit("Error: failed to read '/proc/zoneinfo' with error: %s", err)
+		fatalExit("Error: failed to read '/proc/zoneinfo' with error: %s", err)
 	}
 	zoneinfo := string(file)
 
 	// Parse and verify meminfo
-    info := make(map[string]int)
-    matches := regexp.MustCompile(`(?m)^(\w+[^\s:]+):\s+(\d+)\s*kB`).FindAllStringSubmatch(meminfo, -1)
-    for _, match := range matches {
-        info[match[1]], _ = strconv.Atoi(match[2])
-    }
-    if err = verifyInfo(info); err != nil {
-        fatalExit("Error %s", err.Error())
-    }
+	info := make(map[string]int)
+	matches := regexp.MustCompile(`(?m)^(\w+[^\s:]+):\s+(\d+)\s*kB`).FindAllStringSubmatch(meminfo, -1)
+	for _, match := range matches {
+		info[match[1]], _ = strconv.Atoi(match[2])
+	}
+	if err = verifyInfo(info); err != nil {
+		fatalExit("Error %s", err.Error())
+	}
 
 	// Calculate low watermark
 	lows := regexp.MustCompile(`low\s+(\d+)`).FindAllStringSubmatch(zoneinfo, -1)
@@ -107,44 +112,44 @@ func main() {
 	// Estimate the ammount of memory available for userspace allocations, without causing swapping
 	// Free memory cannot be taken below the low watermark, before the system starts swapping.
 	memFree := info["MemFree"]
-    memAvailable := memFree - wmarkLow
+	memAvailable := memFree - wmarkLow
 
-	// Not all the page cache can be freed, otherwise the system will start swapping. 
+	// Not all the page cache can be freed, otherwise the system will start swapping.
 	// Assume at least half of the page cache, or the low watermark worth of cache, needs to stay.
-    pagecache := info["Active(file)"] + info["Inactive(file)"]
-    pagecache -= min(pagecache / 2, wmarkLow)
-    memAvailable += pagecache
+	pagecache := info["Active(file)"] + info["Inactive(file)"]
+	pagecache -= min(pagecache/2, wmarkLow)
+	memAvailable += pagecache
 
 	// Part of the reclaimable swap consists of items that are in use, and cannot be freed.
 	// Cap this estimate at the low watermark.
-    slab_reclaimable := info["SReclaimable"]
-    slab_reclaimable -= min(slab_reclaimable / 2, wmarkLow)
-    memAvailable += slab_reclaimable
+	slab_reclaimable := info["SReclaimable"]
+	slab_reclaimable -= min(slab_reclaimable/2, wmarkLow)
+	memAvailable += slab_reclaimable
 
-    if memAvailable < 0 {
-      memAvailable = 0
-    }
-    memTotal := info["MemTotal"]
-    memUnavailable := memTotal - memAvailable
+	if memAvailable < 0 {
+		memAvailable = 0
+	}
+	memTotal := info["MemTotal"]
+	memUnavailable := memTotal - memAvailable
 
-    size := "kB"
-    switch strings.ToLower(sizeOp) {
-    case "m", "mb":
+	size := "kB"
+	switch strings.ToLower(sizeOp) {
+	case "m", "mb":
 		memTotal = memTotal / 1024
 		memFree = memFree / 1024
-        memAvailable = memAvailable / 1024
-        memUnavailable = memUnavailable / 1024
-        size = "MB"
-    case "g", "gb":
+		memAvailable = memAvailable / 1024
+		memUnavailable = memUnavailable / 1024
+		size = "MB"
+	case "g", "gb":
 		memTotal = memTotal / 1048576
 		memFree = memFree / 1048576
-        memAvailable = memAvailable / 1048576
-        memUnavailable = memUnavailable / 1048576
-        size = "GB"
-    }
+		memAvailable = memAvailable / 1048576
+		memUnavailable = memUnavailable / 1048576
+		size = "GB"
+	}
 
-    fmt.Printf("MemTotal:       %8d %s\n", memTotal, size)
-    fmt.Printf("MemFree:        %8d %s\n", memFree, size)
-    fmt.Printf("MemAvailable:   %8d %s\n", memAvailable, size)
-    fmt.Printf("MemUnavailable: %8d %s\n", memUnavailable, size)
+	fmt.Printf("MemTotal:       %8d %s\n", memTotal, size)
+	fmt.Printf("MemFree:        %8d %s\n", memFree, size)
+	fmt.Printf("MemAvailable:   %8d %s\n", memAvailable, size)
+	fmt.Printf("MemUnavailable: %8d %s\n", memUnavailable, size)
 }
