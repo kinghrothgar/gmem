@@ -63,7 +63,7 @@ func verifyInfo(info map[string]int) error {
 		if _, ok := info[key]; ok {
 			continue
 		}
-		return errors.New("'/proc/meminfo' does not have the needed field '" + key + "'")
+		return errors.New("'/coreos/proc/meminfo' does not have the needed field '" + key + "'")
 	}
 	return nil
 }
@@ -81,11 +81,11 @@ func main() {
 		err  error
 	)
 	// Read in meminfo and zoneinfo
-	if file, err = ioutil.ReadFile("/proc/meminfo"); err != nil {
+	if file, err = ioutil.ReadFile("/coreos/proc/meminfo"); err != nil {
 		fatalExit("Error: failed to read '/proc/meminfo' with error: %s", err)
 	}
 	meminfo := string(file)
-	if file, err = ioutil.ReadFile("/proc/zoneinfo"); err != nil {
+	if file, err = ioutil.ReadFile("/coreos/proc/zoneinfo"); err != nil {
 		fatalExit("Error: failed to read '/proc/zoneinfo' with error: %s", err)
 	}
 	zoneinfo := string(file)
